@@ -4,6 +4,7 @@ import {
   formatPct,
   formatDays,
   formatCount,
+  formatDistance,
   pctClass,
   timeClass,
   daysClass,
@@ -11,6 +12,8 @@ import {
   normaliseUrgencyCategory,
   escapeHtml,
   hospitalSortKey,
+  haversineKm,
+  markerRadius,
 } from '../src/utils.ts';
 
 describe('formatMinutes', () => {
@@ -206,5 +209,56 @@ describe('hospitalSortKey', () => {
   });
   it('returns -1 for null (sorts to bottom)', () => {
     expect(hospitalSortKey(null)).toBe(-1);
+  });
+});
+
+describe('haversineKm', () => {
+  it('calculates Sydney to Melbourne (~714 km)', () => {
+    const dist = haversineKm(-33.8688, 151.2093, -37.8136, 144.9631);
+    expect(dist).toBeGreaterThan(700);
+    expect(dist).toBeLessThan(730);
+  });
+  it('returns 0 for same point', () => {
+    expect(haversineKm(-33.8, 151.2, -33.8, 151.2)).toBeCloseTo(0, 5);
+  });
+  it('calculates short distance correctly', () => {
+    // ~1.1km between two close points in Sydney CBD
+    const dist = haversineKm(-33.8688, 151.2093, -33.8588, 151.2093);
+    expect(dist).toBeGreaterThan(1);
+    expect(dist).toBeLessThan(1.2);
+  });
+});
+
+describe('markerRadius', () => {
+  it('returns 4 for null', () => {
+    expect(markerRadius(null)).toBe(4);
+  });
+  it('returns 4 for zero', () => {
+    expect(markerRadius(0)).toBe(4);
+  });
+  it('returns small radius for low volume', () => {
+    const r = markerRadius(100);
+    expect(r).toBeGreaterThan(4);
+    expect(r).toBeLessThan(10);
+  });
+  it('returns large radius for high volume', () => {
+    const r = markerRadius(90000);
+    expect(r).toBeGreaterThan(12);
+    expect(r).toBeLessThanOrEqual(16);
+  });
+  it('is capped at 16', () => {
+    expect(markerRadius(1000000)).toBe(16);
+  });
+});
+
+describe('formatDistance', () => {
+  it('formats meters for < 1km', () => {
+    expect(formatDistance(0.5)).toBe('500 m');
+  });
+  it('formats with one decimal for < 10km', () => {
+    expect(formatDistance(5.3)).toBe('5.3 km');
+  });
+  it('formats rounded for >= 10km', () => {
+    expect(formatDistance(15.7)).toBe('16 km');
   });
 });

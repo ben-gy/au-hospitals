@@ -139,3 +139,39 @@ export function normaliseUrgencyCategory(raw: string | null): UrgencyCategory | 
 export function hospitalSortKey(fourHourRate: number | null): number {
   return fourHourRate !== null ? fourHourRate : -1;
 }
+
+/** Haversine distance in km between two lat/lng points */
+export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/** Map marker radius scaled by presentation volume (log scale) */
+export function markerRadius(presentations: number | null): number {
+  if (!presentations || presentations <= 0) return 4;
+  return Math.max(4, Math.min(16, 3 + Math.log10(presentations) * 2.5));
+}
+
+/** Format distance in km for display */
+export function formatDistance(km: number): string {
+  if (km < 1) return `${Math.round(km * 1000)} m`;
+  if (km < 10) return `${km.toFixed(1)} km`;
+  return `${Math.round(km)} km`;
+}
+
+/** State bounds for map fly-to */
+export const STATE_BOUNDS: Record<string, [[number, number], [number, number]]> = {
+  NSW: [[-37.5, 140.9], [-28.1, 154.0]],
+  VIC: [[-39.2, 140.9], [-33.9, 150.0]],
+  QLD: [[-29.2, 137.9], [-10.0, 154.0]],
+  SA:  [[-38.1, 129.0], [-26.0, 141.0]],
+  WA:  [[-35.1, 112.9], [-13.7, 129.0]],
+  TAS: [[-43.6, 143.8], [-40.5, 148.5]],
+  ACT: [[-35.9, 148.7], [-35.1, 149.4]],
+  NT:  [[-26.0, 129.0], [-10.9, 138.0]],
+};

@@ -1,13 +1,14 @@
 import type { AppState, Hospital } from './types.ts';
 import { fetchHospitals, fetchEDMetrics, fetchTriageMetrics, fetchElectiveMetrics } from './api.ts';
 import { renderHeader } from './components/header.ts';
-import { renderSidebar } from './components/sidebar.ts';
-import { renderOverview } from './components/overview.ts';
-import { renderHospitalDetail, updateHospitalDetail } from './components/hospital.ts';
+import { buildListPanel, updateListPanel } from './components/list-panel.ts';
+import type { SortKey } from './components/list-panel.ts';
+import { initMap, flyToHospital, flyToBounds, highlightMarker, flyToUserLocation } from './components/map.ts';
+import { renderDetailContent, closeDetailPanel } from './components/detail-panel.ts';
+import { showInfoModal, shouldShowOnFirstVisit } from './components/info-modal.ts';
+import { STATE_BOUNDS } from './utils.ts';
 
-type SortKey = 'name' | 'ed-rate' | 'state';
-
-const PREFS_KEY = 'aihw_prefs_v1';
+const PREFS_KEY = 'aihw_prefs_v2';
 
 function loadPrefs(): { sort: SortKey; state: string } {
   try {
@@ -25,39 +26,6 @@ function savePrefs(sort: SortKey, state: string): void {
   } catch { /* ignore */ }
 }
 
-function renderLoadingScreen(steps: { label: string; done: boolean; active: boolean }[]): HTMLElement {
-  const div = document.createElement('div');
-  div.className = 'loading-overlay';
-  div.innerHTML = `
-    <div class="spinner"></div>
-    <div style="text-align:center">
-      <div style="font-size:.875rem;font-weight:600;margin-bottom:.5rem">Loading hospital data…</div>
-      <div class="loading-steps">
-        ${steps.map((s) => `
-          <div class="loading-step ${s.done ? 'done' : s.active ? 'active' : ''}">
-            ${s.done ? '✓' : s.active ? '⟳' : '○'} ${s.label}
-          </div>
-        `).join('')}
-      </div>
-    </div>
-  `;
-  return div;
-}
-
-function renderErrorScreen(message: string, onRetry: () => void): HTMLElement {
-  const div = document.createElement('div');
-  div.className = 'error-box';
-  div.innerHTML = `
-    <strong>Failed to load data</strong>
-    <span>${message}</span>
-  `;
-  const btn = document.createElement('button');
-  btn.textContent = 'Retry';
-  btn.addEventListener('click', onRetry);
-  div.appendChild(btn);
-  return div;
-}
-
 export class App {
   private state: AppState;
   private abortController: AbortController | null = null;
@@ -65,10 +33,7 @@ export class App {
   private sortKey: SortKey;
 
   private appEl: HTMLElement;
-  private headerEl: HTMLElement | null = null;
-  private sidebarEl: HTMLElement | null = null;
-  private mainPanelEl: HTMLElement | null = null;
-  private contentEl: HTMLElement | null = null;
+  private listPanelEl: HTMLElement | null = null;
 
   constructor(root: HTMLElement) {
     const prefs = loadPrefs();
@@ -79,7 +44,6 @@ export class App {
       edMetrics: new Map(),
       triageMetrics: new Map(),
       electiveMetrics: new Map(),
-      stateMetrics: [],
       selectedHospital: null,
       selectedState: prefs.state,
       searchQuery: '',
@@ -87,6 +51,8 @@ export class App {
       loadingElective: false,
       error: null,
       dataVersion: '',
+      userLocation: null,
+      detailPanelOpen: false,
     };
 
     this.appEl = root;
@@ -94,40 +60,65 @@ export class App {
   }
 
   private async init(): Promise<void> {
-    this.renderShell();
+    this.buildShell();
     await this.loadData();
   }
 
-  private renderShell(): void {
+  private buildShell(): void {
     this.appEl.innerHTML = '';
 
-    this.headerEl = renderHeader(
-      (q) => this.onSearch(q),
-      this.state.dataVersion,
-    );
+    const header = renderHeader(this.state.dataVersion, () => this.showInfo());
+    this.appEl.appendChild(header);
 
-    const layout = document.createElement('div');
-    layout.className = 'layout';
+    const main = document.createElement('div');
+    main.className = 'main-content';
+    main.setAttribute('role', 'main');
 
-    this.sidebarEl = document.createElement('aside');
-    this.sidebarEl.className = 'sidebar';
-    this.sidebarEl.innerHTML = '<div class="loading-overlay" style="height:100%"><div class="spinner"></div></div>';
+    // Left panel
+    this.listPanelEl = buildListPanel();
+    this.listPanelEl.innerHTML = '<div class="loading-overlay"><div class="spinner"></div></div>';
+    main.appendChild(this.listPanelEl);
 
-    this.mainPanelEl = document.createElement('main');
-    this.mainPanelEl.className = 'main-panel';
-    this.mainPanelEl.setAttribute('role', 'main');
+    // Map wrap
+    const mapWrap = document.createElement('div');
+    mapWrap.className = 'map-wrap';
+    mapWrap.setAttribute('aria-label', 'Map');
+    mapWrap.innerHTML = `
+      <div id="map"></div>
+      <div class="map-legend" aria-hidden="true">
+        <div class="legend-title">ED 4-hour departure rate</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#16a34a"></div>Good (≥75%)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#d97706"></div>Moderate (50–74%)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#dc2626"></div>Poor (&lt;50%)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#94a3b8"></div>No data</div>
+        <div class="legend-size-row">
+          <div class="legend-size-dot" style="width:6px;height:6px"></div>
+          <span>Few patients</span>
+          <div class="legend-size-dot" style="width:14px;height:14px"></div>
+          <span>Many patients</span>
+        </div>
+      </div>
+      <div class="site-footer">
+        <span>Data: <a href="https://myhospitalsapi.aihw.gov.au" target="_blank" rel="noopener">AIHW MyHospitals API</a> 2024–25</span>
+        <span>No tracking · No cookies</span>
+      </div>
+    `;
+    main.appendChild(mapWrap);
 
-    this.contentEl = document.createElement('div');
-    this.contentEl.style.maxWidth = '1100px';
+    // Detail panel
+    const detailPanel = document.createElement('aside');
+    detailPanel.className = 'detail-panel';
+    detailPanel.id = 'detail-panel';
+    detailPanel.setAttribute('aria-label', 'Hospital detail');
+    detailPanel.innerHTML = '<div class="detail-inner" id="detail-inner"></div>';
+    main.appendChild(detailPanel);
 
-    this.mainPanelEl.appendChild(this.contentEl);
-    layout.appendChild(this.sidebarEl);
-    layout.appendChild(this.mainPanelEl);
+    this.appEl.appendChild(main);
 
-    this.appEl.appendChild(this.headerEl);
-    this.appEl.appendChild(layout);
-
-    this.renderMainContent();
+    // Show info modal on first visit
+    if (shouldShowOnFirstVisit()) {
+      setTimeout(() => this.showInfo(), 500);
+    }
   }
 
   private async loadData(): Promise<void> {
@@ -137,114 +128,65 @@ export class App {
 
     this.state.loading = true;
     this.state.error = null;
-    this.renderMainContent();
-
-    const steps = [
-      { label: 'Loading hospital list', done: false, active: true },
-      { label: 'Loading ED performance data', done: false, active: false },
-      { label: 'Loading triage response data', done: false, active: false },
-    ];
-
-    if (this.contentEl) {
-      this.contentEl.innerHTML = '';
-      this.contentEl.appendChild(renderLoadingScreen(steps));
-    }
 
     try {
-      // Step 1: hospitals
       const hospitals = await fetchHospitals(signal);
       this.state.hospitals = hospitals;
-      steps[0].done = true;
-      steps[1].active = true;
-      if (this.contentEl) {
-        this.contentEl.innerHTML = '';
-        this.contentEl.appendChild(renderLoadingScreen(steps));
-      }
 
-      // Step 2+3: ED metrics and triage in parallel
       const [edMetrics, triageMetrics] = await Promise.all([
         fetchEDMetrics(signal),
         fetchTriageMetrics(signal),
       ]);
       this.state.edMetrics = edMetrics;
       this.state.triageMetrics = triageMetrics;
-      steps[1].done = true;
-      steps[2].done = true;
-
       this.state.loading = false;
-      this.renderAll();
+
+      // Init map
+      await initMap('map', this.state.hospitals, this.state.edMetrics, (h) => this.onHospitalSelect(h));
+
+      // Render list
+      this.renderListPanel();
     } catch (err) {
       if ((err as Error).name === 'AbortError') return;
       this.state.loading = false;
       this.state.error = (err as Error).message ?? 'Unknown error';
-      this.renderMainContent();
+      this.renderError();
     }
   }
 
-  private renderAll(): void {
-    this.renderSidebar();
-    this.renderMainContent();
-  }
-
-  private renderSidebar(): void {
-    if (!this.sidebarEl) return;
-    const sidebar = renderSidebar({
+  private renderListPanel(): void {
+    if (!this.listPanelEl) return;
+    updateListPanel(this.listPanelEl, {
       hospitals: this.state.hospitals,
       edMetrics: this.state.edMetrics,
       selectedState: this.state.selectedState,
       selectedHospital: this.state.selectedHospital,
       searchQuery: this.state.searchQuery,
+      userLocation: this.state.userLocation,
+      currentSort: this.sortKey,
+      onSearch: (q) => this.onSearch(q),
       onStateSelect: (s) => this.onStateSelect(s),
       onHospitalSelect: (h) => this.onHospitalSelect(h),
       onSortChange: (s) => this.onSortChange(s),
-      currentSort: this.sortKey,
+      onLocateMe: () => this.onLocateMe(),
     });
-    this.sidebarEl.replaceWith(sidebar);
-    this.sidebarEl = sidebar;
   }
 
-  private renderMainContent(): void {
-    if (!this.contentEl) return;
-
-    if (this.state.loading) {
-      // Loading screen already set above
-      return;
-    }
-
-    if (this.state.error) {
-      this.contentEl.innerHTML = '';
-      this.contentEl.appendChild(renderErrorScreen(this.state.error, () => this.loadData()));
-      return;
-    }
-
-    if (this.state.selectedHospital) {
-      const h = this.state.selectedHospital;
-      const ed = this.state.edMetrics.get(h.code);
-      const triage = this.state.triageMetrics.get(h.code);
-      const elective = this.state.loadingElective
-        ? 'loading'
-        : this.state.electiveMetrics.get(h.code);
-
-      this.contentEl.innerHTML = '';
-      this.contentEl.appendChild(
-        renderHospitalDetail(h, ed, triage, elective, () => this.onBack()),
-      );
-    } else {
-      this.contentEl.innerHTML = '';
-      this.contentEl.appendChild(
-        renderOverview(
-          this.state.hospitals,
-          this.state.edMetrics,
-          (s) => this.onStateSelect(s),
-          (h) => this.onHospitalSelect(h),
-        ),
-      );
-    }
+  private renderError(): void {
+    if (!this.listPanelEl) return;
+    this.listPanelEl.innerHTML = `
+      <div class="error-box">
+        <strong>Failed to load data</strong>
+        <span>${this.state.error}</span>
+        <button id="retry-btn">Retry</button>
+      </div>
+    `;
+    this.listPanelEl.querySelector('#retry-btn')?.addEventListener('click', () => this.loadData());
   }
 
   private onSearch(query: string): void {
     this.state.searchQuery = query;
-    this.renderSidebar();
+    this.renderListPanel();
   }
 
   private onStateSelect(state: string): void {
@@ -252,27 +194,90 @@ export class App {
     this.state.selectedHospital = null;
     this.state.searchQuery = '';
     savePrefs(this.sortKey, state);
-    this.renderAll();
+    closeDetailPanel();
+    highlightMarker(null);
+
+    if (state !== 'All' && STATE_BOUNDS[state]) {
+      flyToBounds(STATE_BOUNDS[state]);
+    }
+
+    this.renderListPanel();
   }
 
   private onHospitalSelect(hospital: Hospital): void {
     this.state.selectedHospital = hospital;
-    this.renderSidebar();
-    this.renderMainContent();
-    this.loadElectiveData(hospital);
-    this.mainPanelEl?.scrollTo(0, 0);
-  }
+    this.state.detailPanelOpen = true;
 
-  private onBack(): void {
-    this.state.selectedHospital = null;
-    this.renderSidebar();
-    this.renderMainContent();
+    // Update list to show selected
+    this.renderListPanel();
+
+    // Fly map
+    flyToHospital(hospital);
+    highlightMarker(hospital.code);
+
+    // Show detail panel with current data (elective loading)
+    this.renderDetailPanel('loading');
+    this.loadElectiveData(hospital);
   }
 
   private onSortChange(sort: SortKey): void {
     this.sortKey = sort;
     savePrefs(sort, this.state.selectedState);
-    this.renderSidebar();
+    this.renderListPanel();
+  }
+
+  private onLocateMe(): void {
+    if (this.state.userLocation) {
+      // Already located — toggle off
+      this.state.userLocation = null;
+      if (this.sortKey === 'nearest') {
+        this.sortKey = 'ed-rate';
+        savePrefs(this.sortKey, this.state.selectedState);
+      }
+      this.renderListPanel();
+      return;
+    }
+
+    if (!navigator.geolocation) return;
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        this.state.userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        this.sortKey = 'nearest';
+        savePrefs(this.sortKey, this.state.selectedState);
+        flyToUserLocation(pos.coords.latitude, pos.coords.longitude);
+        this.renderListPanel();
+      },
+      () => {
+        // Geolocation denied or failed — do nothing
+      },
+      { enableHighAccuracy: false, timeout: 10000 },
+    );
+  }
+
+  private onCloseDetail(): void {
+    this.state.selectedHospital = null;
+    this.state.detailPanelOpen = false;
+    closeDetailPanel();
+    highlightMarker(null);
+    this.renderListPanel();
+  }
+
+  private renderDetailPanel(elective: 'loading' | undefined): void {
+    const h = this.state.selectedHospital;
+    if (!h) return;
+
+    const electiveData = elective === 'loading'
+      ? 'loading' as const
+      : this.state.electiveMetrics.get(h.code);
+
+    renderDetailContent(
+      h,
+      this.state.edMetrics.get(h.code),
+      this.state.triageMetrics.get(h.code),
+      electiveData,
+      () => this.onCloseDetail(),
+    );
   }
 
   private async loadElectiveData(hospital: Hospital): Promise<void> {
@@ -280,37 +285,20 @@ export class App {
     this.electiveAbort = new AbortController();
     const { signal } = this.electiveAbort;
 
-    // Show loading in detail panel if already rendered
-    if (this.state.selectedHospital?.code === hospital.code) {
-      this.state.loadingElective = true;
-      this.updateDetailElective('loading');
-    }
-
     try {
       const metrics = await fetchElectiveMetrics(hospital.code, signal);
       if (this.state.selectedHospital?.code !== hospital.code) return;
       this.state.electiveMetrics.set(hospital.code, metrics);
-      this.state.loadingElective = false;
-      this.updateDetailElective(metrics);
+      this.renderDetailPanel(undefined);
     } catch (err) {
       if ((err as Error).name === 'AbortError') return;
-      this.state.loadingElective = false;
-      this.updateDetailElective(undefined);
+      if (this.state.selectedHospital?.code === hospital.code) {
+        this.renderDetailPanel(undefined);
+      }
     }
   }
 
-  private updateDetailElective(elective: Parameters<typeof updateHospitalDetail>[4]): void {
-    const h = this.state.selectedHospital;
-    if (!h || !this.contentEl) return;
-    const detail = this.contentEl.querySelector('#hospital-detail');
-    if (!detail) return;
-    updateHospitalDetail(
-      detail as HTMLElement,
-      h,
-      this.state.edMetrics.get(h.code),
-      this.state.triageMetrics.get(h.code),
-      elective,
-      () => this.onBack(),
-    );
+  private showInfo(): void {
+    showInfoModal(() => { /* modal closed */ });
   }
 }

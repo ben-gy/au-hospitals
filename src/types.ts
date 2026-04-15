@@ -43,20 +43,11 @@ export interface ElectiveSurgeryMetrics {
   count: Partial<Record<UrgencyCategory, number>>;
 }
 
-export interface StateMetrics {
-  state: string;
-  fourHourRateAll: number | null;
-  medianTimeAll: number | null;
-  p90TimeAll: number | null;
-  hospitalCount: number;
-}
-
 export interface AppState {
   hospitals: Hospital[];
   edMetrics: Map<string, EDMetrics>;
   triageMetrics: Map<string, TriageMetrics>;
   electiveMetrics: Map<string, ElectiveSurgeryMetrics>;
-  stateMetrics: StateMetrics[];
   selectedHospital: Hospital | null;
   selectedState: string;
   searchQuery: string;
@@ -64,6 +55,8 @@ export interface AppState {
   loadingElective: boolean;
   error: string | null;
   dataVersion: string;
+  userLocation: { lat: number; lng: number } | null;
+  detailPanelOpen: boolean;
 }
 
 // Raw API types

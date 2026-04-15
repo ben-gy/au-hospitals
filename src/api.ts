@@ -89,7 +89,7 @@ export async function fetchHospitals(signal?: AbortSignal): Promise<Hospital[]> 
     return {
       code: u.reporting_unit_code,
       name: u.reporting_unit_name,
-      state: stateMapping?.mapped_reporting_unit.reporting_unit_code ?? 'Unknown',
+      state: (stateMapping?.mapped_reporting_unit.reporting_unit_code ?? 'Unknown').toUpperCase(),
       isPrivate: u.private ?? false,
       lat: u.latitude,
       lng: u.longitude,
