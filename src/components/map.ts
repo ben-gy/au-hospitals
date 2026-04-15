@@ -35,11 +35,23 @@ export async function initMap(
     zoomControl: true,
   });
 
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/voyager/{z}/{x}/{y}{r}.png', {
+  // Try CartoDB Voyager first, fall back to OSM standard tiles
+  const cartoLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/voyager/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
     subdomains: 'abcd',
     maxZoom: 18,
-  }).addTo(map);
+  });
+
+  const osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19,
+  });
+
+  cartoLayer.addTo(map);
+  cartoLayer.on('tileerror', () => {
+    map.removeLayer(cartoLayer);
+    osmLayer.addTo(map);
+  });
 
   for (const hospital of hospitals) {
     if (hospital.lat === null || hospital.lng === null) continue;
