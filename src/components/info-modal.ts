@@ -66,7 +66,7 @@ export function showInfoModal(onClose: () => void): HTMLElement {
       <p>
         All data from the
         <a href="https://myhospitalsapi.aihw.gov.au" target="_blank" rel="noopener">AIHW MyHospitals API</a>
-        (public, free, no authentication required). Financial year 2024–25. No tracking, no cookies, no analytics.
+        (public, free, no authentication required). Financial year 2024–25. No cookies, no tracking — only anonymous, cookie-less page-view counts via Cloudflare Web Analytics.
       </p>
     </div>
   `;
