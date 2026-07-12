@@ -409,6 +409,47 @@ body {
   font-size: var(--font-size-base);
 }
 
+/* ── Global hover tooltip (data-tip) ── */
+.hover-tip {
+  position: fixed;
+  z-index: 10000;
+  background: var(--text-primary);
+  color: #ffffff;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+  max-width: 260px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 100ms ease;
+  box-shadow: var(--shadow-md);
+}
+.hover-tip.visible { opacity: 1; }
+
+/* Leaflet marker hover tooltip */
+.leaflet-tooltip.hospital-marker-tip {
+  background: var(--text-primary);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-sm) var(--space-md);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-xs);
+  line-height: 1.35;
+  white-space: nowrap;
+}
+.leaflet-tooltip.hospital-marker-tip .marker-tip-name {
+  display: block;
+  font-weight: 700;
+  font-size: var(--font-size-sm);
+  margin-bottom: 2px;
+}
+.leaflet-tooltip.hospital-marker-tip .marker-tip-row { display: block; }
+.leaflet-tooltip.hospital-marker-tip::before { display: none; }
+
 /* ── Detail panel (right side) ── */
 .detail-panel {
   width: 0;

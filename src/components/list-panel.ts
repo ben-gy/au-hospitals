@@ -117,6 +117,9 @@ export function updateListPanel(panel: HTMLElement, opts: ListPanelOptions): voi
         const dist = (userLocation && h.lat !== null && h.lng !== null)
           ? formatDistance(haversineKm(userLocation.lat, userLocation.lng, h.lat, h.lng))
           : null;
+        const badgeTip = rate !== null
+          ? `4-hour ED departure rate: ${formatPct(rate)}`
+          : '4-hour ED departure rate: no data reported';
         return `
           <div
             class="hospital-item${isSelected ? ' selected' : ''}"
@@ -126,11 +129,11 @@ export function updateListPanel(panel: HTMLElement, opts: ListPanelOptions): voi
             tabindex="0"
           >
             <div class="hospital-item-info">
-              <div class="hospital-item-name" title="${escapeHtml(h.name)}">${escapeHtml(h.name)}</div>
+              <div class="hospital-item-name" data-tip="${escapeHtml(h.name)}">${escapeHtml(h.name)}</div>
               <div class="hospital-item-meta">${h.state}${dist ? ` · ${dist}` : ''}${h.isPrivate ? ' · Private' : ''}</div>
             </div>
             <div class="hospital-item-score">
-              <span class="score-badge ${cls}" title="4-hr ED departure rate">${formatPct(rate)}</span>
+              <span class="score-badge ${cls}" data-tip="${escapeHtml(badgeTip)}" aria-label="${escapeHtml(badgeTip)}">${formatPct(rate)}</span>
             </div>
           </div>
         `;

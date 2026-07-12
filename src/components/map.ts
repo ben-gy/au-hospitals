@@ -74,6 +74,13 @@ export async function initMap(
     const popupHtml = buildPopupHtml(hospital, ed);
     marker.bindPopup(popupHtml, { maxWidth: 240, autoPan: false });
 
+    marker.bindTooltip(buildTooltipHtml(hospital, ed), {
+      direction: 'top',
+      offset: [0, -radius - 2],
+      opacity: 1,
+      className: 'hospital-marker-tip',
+    });
+
     marker.on('click', () => onSelect(hospital));
 
     marker.addTo(map);
@@ -113,6 +120,18 @@ export function highlightMarker(hospitalCode: string | null): void {
 export function flyToUserLocation(lat: number, lng: number): void {
   if (!mapInstance) return;
   mapInstance.flyTo([lat, lng], 10, { duration: 0.8 });
+}
+
+function buildTooltipHtml(hospital: Hospital, ed: EDMetrics | undefined): string {
+  const rate = ed?.fourHourRateAll ?? null;
+  const presentations = ed?.totalPresentations ?? null;
+  return (
+    `<span class="marker-tip-name">${escapeHtml(hospital.name)}</span>` +
+    `<span class="marker-tip-row">4-hr departure: <strong>${formatPct(rate)}</strong></span>` +
+    (presentations !== null
+      ? `<span class="marker-tip-row">Presentations: <strong>${formatCount(presentations)}</strong></span>`
+      : '')
+  );
 }
 
 function buildPopupHtml(hospital: Hospital, ed: EDMetrics | undefined): string {
