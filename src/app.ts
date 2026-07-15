@@ -101,7 +101,7 @@ export class App {
       <div class="site-footer">
         <span>Data: <a href="https://myhospitalsapi.aihw.gov.au" target="_blank" rel="noopener">AIHW MyHospitals API</a> 2024–25</span>
         <span>No tracking · No cookies</span>
-        <span>Built by <a href="https://benrichardson.dev/" target="_blank" rel="noopener">benrichardson.dev</a> · <a href="https://sites.benrichardson.dev" target="_blank" rel="noopener">more tools &amp; sites</a></span>
+        <span>Built by <a href="https://benrichardson.dev/" target="_blank" rel="noopener">benrichardson.dev</a> · <a href="https://hub.benrichardson.dev" target="_blank" rel="noopener">more tools &amp; sites</a></span>
       </div>
     `;
     main.appendChild(mapWrap);
